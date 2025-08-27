@@ -34,6 +34,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
     
@@ -44,10 +45,19 @@ class MainActivity : ComponentActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var sharedPreferences: SharedPreferences
     private var imageCapture: ImageCapture? = null
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
     
-    // Replace with your OpenAI API key
-    private val openAiApiKey = ""
+    // Backend API configuration - Using ngrok for universal access
+    // Replace this URL with your actual ngrok HTTPS URL
+    private val backendBaseUrl = "https://tightly-ultimate-crayfish.ngrok-free.app"
+    
+    // Alternative URLs (comment out when using ngrok):
+    // private val backendBaseUrl = "http://10.0.2.2:8080" // For emulator
+    // private val backendBaseUrl = "http://192.168.201.141:8080" // For physical device
     
     // Default prompt - will be loaded from SharedPreferences
     private val defaultPrompt = "Extract any entities you see in the image, If any one of these is a movie, get its imdb rating"
@@ -169,42 +179,51 @@ class MainActivity : ComponentActivity() {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     Log.d("CameraX", "Photo saved successfully")
                     
-                    statusText.text = "Analyzing with GPT-4o..."
+                    statusText.text = "Analyzing with AI..."
                     
-                    // Convert image to base64 and send to GPT-4o
+                    // Send image to backend API
                     val photoFile = output.savedUri?.path?.let { java.io.File(it) }
                     photoFile?.let { file ->
-                        processImageWithGPT(file)
+                        sendImageToBackend(file)
                     }
                 }
             }
         )
     }
 
-    private fun processImageWithGPT(imageFile: java.io.File) {
+    private fun sendImageToBackend(imageFile: java.io.File) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // Convert image to base64
-                val bitmap = BitmapFactory.decodeFile(imageFile.absolutePath)
-                val resizedBitmap = resizeBitmap(bitmap, 512) // Resize to reduce API costs
-                val base64Image = bitmapToBase64(resizedBitmap)
+                // Create multipart form data with image and prompt
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("prompt", customPrompt)
+                    .addFormDataPart(
+                        "image", 
+                        imageFile.name,
+                        RequestBody.create("image/jpeg".toMediaType(), imageFile)
+                    )
+                    .build()
                 
-                // Create OpenAI API request
-                val request = createGPTRequest(base64Image)
+                // Create request to backend API
+                val request = Request.Builder()
+                    .url("$backendBaseUrl/api/analyze-image")
+                    .post(requestBody)
+                    .build()
                 
                 // Make API call
                 val response = client.newCall(request).execute()
                 
                 if (response.isSuccessful) {
                     val responseBody = response.body?.string()
-                    val gptResponse = parseGPTResponse(responseBody)
+                    val backendResponse = parseBackendResponse(responseBody)
                     
                     withContext(Dispatchers.Main) {
-                        showGPTResponse(gptResponse)
+                        showAnalysisResponse(backendResponse)
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "API call failed: ${response.code}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Backend API call failed: ${response.code}", Toast.LENGTH_LONG).show()
                         // Re-enable button on error
                         captureButton.isEnabled = true
                         statusText.text = "Tap the button to capture photo"
@@ -212,7 +231,7 @@ class MainActivity : ComponentActivity() {
                 }
                 
             } catch (e: Exception) {
-                Log.e("GPT", "Error processing image", e)
+                Log.e("Backend", "Error sending image to backend", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                     // Re-enable button on error
@@ -223,81 +242,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun resizeBitmap(bitmap: Bitmap, maxSize: Int): Bitmap {
-        val width = bitmap.width
-        val height = bitmap.height
-        
-        val scale = if (width > height) {
-            maxSize.toFloat() / width
-        } else {
-            maxSize.toFloat() / height
-        }
-        
-        val matrix = Matrix()
-        matrix.postScale(scale, scale)
-        
-        return Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, false)
-    }
-
-    private fun bitmapToBase64(bitmap: Bitmap): String {
-        val byteArrayOutputStream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, byteArrayOutputStream)
-        val byteArray = byteArrayOutputStream.toByteArray()
-        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
-    }
-
-    private fun createGPTRequest(base64Image: String): Request {
-        val requestBody = GPTRequest(
-            model = "gpt-4o",
-            messages = listOf(
-                GPTMessage(
-                    role = "user",
-                    content = listOf(
-                        GPTContent(type = "text", text = customPrompt),
-                        GPTContent(
-                            type = "image_url",
-                            imageUrl = GPTImageUrl("data:image/jpeg;base64,$base64Image")
-                        )
-                    )
-                )
-            ),
-            maxTokens = 300
-        )
-        
-        val json = Gson().toJson(requestBody)
-        val body = json.toRequestBody("application/json".toMediaType())
-        
-        return Request.Builder()
-            .url("https://api.openai.com/v1/chat/completions")
-            .addHeader("Authorization", "Bearer $openAiApiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(body)
-            .build()
-    }
-
-    private fun parseGPTResponse(responseBody: String?): String {
+    private fun parseBackendResponse(responseBody: String?): String {
         return try {
-            val response = Gson().fromJson(responseBody, GPTResponse::class.java)
-            response.choices.firstOrNull()?.message?.content ?: "No response received"
+            val response = Gson().fromJson(responseBody, BackendResponse::class.java)
+            response.analysis ?: "No analysis received"
         } catch (e: Exception) {
-            "Error parsing response: ${e.message}"
+            responseBody ?: "Error parsing response: ${e.message}"
         }
     }
 
-    private fun showGPTResponse(response: String) {
-        // For now, show in a Toast. In a real app, you'd show this in a proper UI
-        Toast.makeText(this, "GPT Response: $response", Toast.LENGTH_LONG).show()
-        
+    private fun showAnalysisResponse(response: String) {
         // Log the full response
-        Log.d("GPT_RESPONSE", response)
+        Log.d("BACKEND_RESPONSE", response)
         
-        // You can also show in a dialog or navigate to a new screen
+        // Show in a dialog
         showResponseDialog(response)
     }
 
     private fun showResponseDialog(response: String) {
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("GPT-4o Analysis")
+            .setTitle("AI Analysis")
             .setMessage(response)
             .setPositiveButton("Take Another Photo") { _, _ ->
                 // Re-enable capture button for another photo
@@ -313,7 +277,7 @@ class MainActivity : ComponentActivity() {
     private fun showPromptEditDialog() {
         val editText = EditText(this).apply {
             setText(customPrompt)
-            hint = "Enter your custom prompt for GPT-4o"
+            hint = "Enter your custom prompt for AI analysis"
             minLines = 3
             maxLines = 8
             setPadding(32, 24, 32, 24)
@@ -321,7 +285,7 @@ class MainActivity : ComponentActivity() {
         
         AlertDialog.Builder(this)
             .setTitle("Edit Custom Prompt")
-            .setMessage("Customize how GPT-4o analyzes your photos:")
+            .setMessage("Customize how AI analyzes your photos:")
             .setView(editText)
             .setPositiveButton("Save") { _, _ ->
                 val newPrompt = editText.text.toString().trim()
@@ -353,37 +317,9 @@ class MainActivity : ComponentActivity() {
         cameraExecutor.shutdown()
     }
 
-    // Data classes for OpenAI API
-    data class GPTRequest(
-        val model: String,
-        val messages: List<GPTMessage>,
-        @SerializedName("max_tokens") val maxTokens: Int
-    )
-
-    data class GPTMessage(
-        val role: String,
-        val content: List<GPTContent>
-    )
-
-    data class GPTContent(
-        val type: String,
-        val text: String? = null,
-        @SerializedName("image_url") val imageUrl: GPTImageUrl? = null
-    )
-
-    data class GPTImageUrl(
-        val url: String
-    )
-
-    data class GPTResponse(
-        val choices: List<GPTChoice>
-    )
-
-    data class GPTChoice(
-        val message: GPTResponseMessage
-    )
-
-    data class GPTResponseMessage(
-        val content: String
+    // Data class for Backend API response
+    data class BackendResponse(
+        val analysis: String?,
+        val status: String? = null
     )
 }
