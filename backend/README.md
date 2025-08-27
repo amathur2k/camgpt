@@ -1,14 +1,17 @@
 # CamGPT Backend API
 
-A simple REST API backend that accepts images and processes them using OpenAI's GPT-4o Vision API.
+An intelligent REST API backend with agentic AI capabilities that combines image analysis with real-time web search.
 
-## Features
+## 🤖 Agentic AI Features
 
 - 🖼️ **Image Upload**: Accepts image files via multipart form data
-- 🤖 **AI Analysis**: Uses OpenAI GPT-4o for intelligent image analysis
-- 🔧 **Customizable Prompts**: Supports custom analysis prompts
+- 🧠 **Intelligent Agent**: AI agent that decides when web search is needed
+- 🔍 **Web Search Integration**: Uses Tavily API for real-time information
+- 🤖 **GPT-4o Vision**: Advanced image analysis capabilities
+- 🔧 **Smart Prompts**: Agent automatically enhances analysis with web data
 - 🚀 **Auto Cleanup**: Automatically removes uploaded files after processing
 - 🛡️ **Error Handling**: Comprehensive error handling with meaningful responses
+- 📊 **Agent Transparency**: Returns metadata about agent decisions and web searches
 
 ## API Endpoints
 
@@ -18,7 +21,7 @@ GET /api/health
 ```
 Returns server status and current timestamp.
 
-### Analyze Image
+### Analyze Image (with Agentic AI)
 ```
 POST /api/analyze-image
 Content-Type: multipart/form-data
@@ -28,12 +31,50 @@ Fields:
 - prompt: Custom analysis prompt (optional)
 ```
 
-**Example Response:**
+**Example Response (without web search):**
 ```json
 {
-  "analysis": "I can see a beautiful sunset over the ocean with clouds in the sky...",
+  "analysis": "I can see a movie poster for 'Inception'...",
   "status": "success",
-  "model": "gpt-4o"
+  "model": "gpt-4o",
+  "agent": {
+    "webSearchUsed": false,
+    "searchQuery": null,
+    "iterations": 1,
+    "webResults": null
+  }
+}
+```
+
+**Example Response (with web search):**
+```json
+{
+  "analysis": "This is the movie poster for 'Inception' (2010). Current IMDB rating: 8.8/10 with over 2 million reviews. The film grossed $836 million worldwide and is available for streaming on Netflix as of 2024...",
+  "status": "success",
+  "model": "gpt-4o",
+  "agent": {
+    "webSearchUsed": true,
+    "searchQuery": "Inception movie IMDB rating reviews 2024",
+    "iterations": 2,
+    "webResults": [
+      {
+        "title": "Inception (2010) - IMDb",
+        "url": "https://www.imdb.com/title/tt1375666/",
+        "content": "IMDB rating 8.8/10..."
+      }
+    ]
+  }
+}
+```
+
+### Test Agent (Development)
+```
+POST /api/test-agent
+Content-Type: application/json
+
+Body:
+{
+  "prompt": "What is the current stock price of Apple?"
 }
 ```
 
@@ -50,15 +91,20 @@ npm install
 # Copy environment template
 cp env.example .env
 
-# Edit .env file and add your OpenAI API key
+# Edit .env file and add your API keys
 nano .env
 ```
 
-Add your OpenAI API key to the `.env` file:
+Add your API keys to the `.env` file:
 ```
 OPENAI_API_KEY=sk-your-actual-api-key-here
+TAVILY_API_KEY=tvly-your-tavily-api-key-here
 PORT=8080
 ```
+
+**Get your API keys:**
+- **OpenAI**: [OpenAI Platform](https://platform.openai.com/api-keys)
+- **Tavily**: [Tavily API](https://tavily.com/) (free tier available)
 
 ### 3. Run the Server
 

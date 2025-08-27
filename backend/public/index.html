@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CamGPT Agent Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        .upload-section {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 25px;
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+
+        .upload-section:hover {
+            border-color: #4f46e5;
+            background: #f1f5f9;
+        }
+
+        .upload-section h2 {
+            color: #1e293b;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 15px 20px;
+            background: #4f46e5;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: background 0.3s ease;
+            font-weight: 500;
+        }
+
+        .file-input-label:hover {
+            background: #4338ca;
+        }
+
+        .image-preview {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .prompt-section {
+            margin-top: 20px;
+        }
+
+        .prompt-section label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .prompt-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            resize: vertical;
+            min-height: 120px;
+            font-family: inherit;
+            transition: border-color 0.3s ease;
+        }
+
+        .prompt-input:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .analyze-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .analyze-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .analyze-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .results-section {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 25px;
+        }
+
+        .results-section h2 {
+            color: #1e293b;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .result-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .result-title {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 1.1rem;
+        }
+
+        .agent-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .agent-badge.web-search {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .agent-badge.no-search {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .result-content {
+            color: #374151;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .agent-metadata {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f1f5f9;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+
+        .metadata-item {
+            margin-bottom: 8px;
+        }
+
+        .metadata-label {
+            font-weight: 600;
+            color: #475569;
+        }
+
+        .web-results {
+            margin-top: 10px;
+        }
+
+        .web-result-item {
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 3px solid #4f46e5;
+        }
+
+        .web-result-title {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 5px;
+        }
+
+        .web-result-url {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+
+        .error-message {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #dc2626;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 CamGPT Agent Tester</h1>
+            <p>Test the agentic AI with image analysis and web search capabilities</p>
+        </div>
+
+        <div class="content">
+            <!-- Upload Section -->
+            <div class="upload-section">
+                <h2>📸 Upload & Analyze</h2>
+                
+                <div class="file-input-wrapper">
+                    <input type="file" id="imageInput" class="file-input" accept="image/*">
+                    <label for="imageInput" class="file-input-label">
+                        📁 Choose Image File
+                    </label>
+                </div>
+
+                <div class="image-preview" id="imagePreview" style="display: none;">
+                    <img id="previewImg" alt="Preview">
+                </div>
+
+                <div class="prompt-section">
+                    <label for="promptInput">🎯 Analysis Prompt:</label>
+                    <textarea 
+                        id="promptInput" 
+                        class="prompt-input" 
+                        placeholder="Enter your analysis prompt here... 
+
+Examples:
+• If you find a movie poster, return the movie name and current IMDB rating
+• If you find a product, return the product name and current price
+• If you find text, extract and transcribe all visible text
+• Describe what you see in detail"
+                    ></textarea>
+                </div>
+
+                <button id="analyzeBtn" class="analyze-btn" disabled>
+                    🚀 Analyze with Agent
+                </button>
+            </div>
+
+            <!-- Results Section -->
+            <div class="results-section">
+                <h2>📊 Analysis Results</h2>
+                <div id="resultsContainer">
+                    <div style="text-align: center; color: #6b7280; padding: 40px;">
+                        Upload an image and enter a prompt to see the agent analysis results here.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewImg = document.getElementById('previewImg');
+        const promptInput = document.getElementById('promptInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const resultsContainer = document.getElementById('resultsContainer');
+
+        let selectedFile = null;
+
+        // Handle file selection
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                selectedFile = file;
+                
+                // Show preview
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImg.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    updateAnalyzeButton();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle prompt input
+        promptInput.addEventListener('input', updateAnalyzeButton);
+
+        function updateAnalyzeButton() {
+            const hasImage = selectedFile !== null;
+            const hasPrompt = promptInput.value.trim().length > 0;
+            analyzeBtn.disabled = !(hasImage && hasPrompt);
+        }
+
+        // Handle analyze button click
+        analyzeBtn.addEventListener('click', async function() {
+            if (!selectedFile || !promptInput.value.trim()) {
+                alert('Please select an image and enter a prompt');
+                return;
+            }
+
+            // Show loading state
+            showLoading();
+            analyzeBtn.disabled = true;
+
+            try {
+                // Create form data
+                const formData = new FormData();
+                formData.append('image', selectedFile);
+                formData.append('prompt', promptInput.value.trim());
+
+                // Make API call
+                const response = await fetch('/api/analyze-image', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showResults(result);
+                } else {
+                    showError(result.error || 'Analysis failed');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Network error: ' + error.message);
+            } finally {
+                analyzeBtn.disabled = false;
+                updateAnalyzeButton();
+            }
+        });
+
+        function showLoading() {
+            resultsContainer.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>🤖 Agent is analyzing your image...</p>
+                    <p style="font-size: 0.9rem; margin-top: 10px;">This may take 10-30 seconds</p>
+                </div>
+            `;
+        }
+
+        function showResults(result) {
+            const webSearchUsed = result.agent?.webSearchUsed || false;
+            const badgeClass = webSearchUsed ? 'web-search' : 'no-search';
+            const badgeText = webSearchUsed ? '🔍 Web Search Used' : '🤖 AI Only';
+
+            let webResultsHtml = '';
+            if (webSearchUsed && result.agent?.webResults) {
+                webResultsHtml = `
+                    <div class="web-results">
+                        <div class="metadata-label">🌐 Web Search Results:</div>
+                        ${result.agent.webResults.map(item => `
+                            <div class="web-result-item">
+                                <div class="web-result-title">${item.title}</div>
+                                <div class="web-result-url">${item.url}</div>
+                                <div style="font-size: 0.8rem; color: #6b7280;">${item.content?.substring(0, 200)}...</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            resultsContainer.innerHTML = `
+                <div class="result-card">
+                    <div class="result-header">
+                        <div class="result-title">📋 Analysis Result</div>
+                        <div class="agent-badge ${badgeClass}">${badgeText}</div>
+                    </div>
+                    <div class="result-content">${result.analysis}</div>
+                    
+                    <div class="agent-metadata">
+                        <div class="metadata-item">
+                            <span class="metadata-label">🤖 Model:</span> ${result.model}
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">🔄 Iterations:</span> ${result.agent?.iterations || 1}
+                        </div>
+                        ${result.agent?.searchQuery ? `
+                            <div class="metadata-item">
+                                <span class="metadata-label">🔍 Search Query:</span> "${result.agent.searchQuery}"
+                            </div>
+                        ` : ''}
+                        ${webResultsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function showError(errorMessage) {
+            resultsContainer.innerHTML = `
+                <div class="error-message">
+                    <strong>❌ Error:</strong> ${errorMessage}
+                </div>
+            `;
+        }
+
+        // Set default prompt
+        promptInput.value = "If you find a movie poster or movie title, return the movie name and IMDB rating. If you find text or writing, extract and transcribe all visible text. If you find objects or items, list all objects and their colors. If you find anything else, describe what you see in detail.";
+        updateAnalyzeButton();
+    </script>
+</body>
+</html>

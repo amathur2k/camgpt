@@ -5,19 +5,23 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const OpenAI = require('openai');
+const AgentService = require('./agentService');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize Agent Service with both OpenAI and Tavily
+const agentService = new AgentService(
+  process.env.OPENAI_API_KEY,
+  process.env.TAVILY_API_KEY
+);
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve static files (for the test frontend)
+app.use(express.static('public'));
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -72,13 +76,24 @@ function cleanupFile(filePath) {
   }
 }
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    message: 'CamGPT Backend API is running',
-    timestamp: new Date().toISOString()
-  });
+// Health check endpoint with agent service status
+app.get('/api/health', async (req, res) => {
+  try {
+    const agentHealth = await agentService.healthCheck();
+    res.json({
+      status: 'OK',
+      message: 'CamGPT Backend API is running',
+      timestamp: new Date().toISOString(),
+      services: agentHealth
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Health check failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Main endpoint for image analysis
@@ -103,36 +118,23 @@ app.post('/api/analyze-image', upload.single('image'), async (req, res) => {
     // Convert image to base64
     const base64Image = imageToBase64(uploadedFilePath);
 
-    // Call OpenAI GPT-4o Vision API
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${base64Image}`,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 300,
-    });
-
-    const analysis = response.choices[0]?.message?.content || 'No analysis received';
+    // Use agentic flow for enhanced analysis
+    const agentResult = await agentService.analyzeWithAgent(base64Image, prompt);
 
     // Clean up uploaded file
     cleanupFile(uploadedFilePath);
 
-    // Return successful response
+    // Return enhanced response with agent metadata
     res.json({
-      analysis: analysis,
+      analysis: agentResult.finalAnswer,
       status: 'success',
-      model: 'gpt-4o'
+      model: 'gpt-4o',
+      agent: {
+        webSearchUsed: agentResult.webSearchUsed,
+        searchQuery: agentResult.searchQuery || null,
+        iterations: agentResult.iterations,
+        webResults: agentResult.webResults || null
+      }
     });
 
     console.log('Analysis completed successfully');
@@ -170,6 +172,44 @@ app.post('/api/analyze-image', upload.single('image'), async (req, res) => {
   }
 });
 
+// Test endpoint for agentic flow (for debugging)
+app.post('/api/test-agent', async (req, res) => {
+  try {
+    const { prompt, requireWebSearch } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({
+        error: 'Prompt is required',
+        status: 'error'
+      });
+    }
+
+    // Create a simple test image (1x1 pixel base64 encoded)
+    const testImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    
+    const agentResult = await agentService.analyzeWithAgent(testImageBase64, prompt);
+
+    res.json({
+      analysis: agentResult.finalAnswer,
+      status: 'success',
+      test: true,
+      agent: {
+        webSearchUsed: agentResult.webSearchUsed,
+        searchQuery: agentResult.searchQuery || null,
+        iterations: agentResult.iterations,
+        webResults: agentResult.webResults || null
+      }
+    });
+
+  } catch (error) {
+    console.error('Test agent error:', error);
+    res.status(500).json({
+      error: error.message || 'Test agent failed',
+      status: 'error'
+    });
+  }
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
@@ -198,11 +238,19 @@ app.use('*', (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 CamGPT Backend API running on http://localhost:${PORT}`);
+  console.log(`🧪 Test Frontend: http://localhost:${PORT}`);
   console.log(`📋 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🤖 Image analysis: POST http://localhost:${PORT}/api/analyze-image`);
   console.log(`🌐 Also available on your network at http://0.0.0.0:${PORT}`);
+  console.log(`🔍 Agentic AI with web search capabilities enabled`);
   
   if (!process.env.OPENAI_API_KEY) {
     console.warn('⚠️  WARNING: OPENAI_API_KEY environment variable not set!');
+  }
+  
+  if (!process.env.TAVILY_API_KEY) {
+    console.warn('⚠️  WARNING: TAVILY_API_KEY not set - web search will be disabled');
+  } else {
+    console.log('✅ Tavily web search integration active');
   }
 });
