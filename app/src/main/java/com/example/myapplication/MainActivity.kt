@@ -13,6 +13,11 @@ import android.util.Log
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.LinearLayout
+import android.widget.Button
+import android.widget.ScrollView
+import android.view.ViewGroup
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -59,11 +64,40 @@ class MainActivity : ComponentActivity() {
     // private val backendBaseUrl = "http://10.0.2.2:8080" // For emulator
     // private val backendBaseUrl = "http://192.168.201.141:8080" // For physical device
     
-    // Default prompt - will be loaded from SharedPreferences
-    private val defaultPrompt = "Extract any entities you see in the image, If any one of these is a movie, get its imdb rating"
+    // Data class for conditional prompts
+    data class ConditionalPrompt(
+        var condition: String,
+        var action: String,
+        var id: String = java.util.UUID.randomUUID().toString()
+    )
     
-    // Current prompt - dynamically loaded
-    private var customPrompt: String = defaultPrompt
+    // Default conditional prompts
+    private val defaultConditionalPrompts = mutableListOf(
+        ConditionalPrompt("a movie poster or movie title", "return the movie name and IMDB rating"),
+        ConditionalPrompt("text or writing", "extract and transcribe all visible text"),
+        ConditionalPrompt("objects or items", "list all objects and their colors"),
+        ConditionalPrompt("anything else", "describe what you see in detail")
+    )
+    
+    // Current conditional prompts - dynamically loaded
+    private var conditionalPrompts: MutableList<ConditionalPrompt> = mutableListOf()
+    
+    // Generate final prompt from conditional prompts
+    private fun generateFinalPrompt(): String {
+        if (conditionalPrompts.isEmpty()) {
+            return "Describe what you see in this image"
+        }
+        
+        val promptBuilder = StringBuilder()
+        promptBuilder.append("Analyze this image and follow these instructions in order:\n\n")
+        
+        conditionalPrompts.forEachIndexed { index, prompt ->
+            promptBuilder.append("${index + 1}. If you find ${prompt.condition}, then ${prompt.action}.\n")
+        }
+        
+        promptBuilder.append("\nProvide only answers to what is asked for, be precise and to the point.")
+        return promptBuilder.toString()
+    }
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -83,8 +117,8 @@ class MainActivity : ComponentActivity() {
         // Initialize SharedPreferences
         sharedPreferences = getSharedPreferences("CamGPTPrefs", Context.MODE_PRIVATE)
         
-        // Load saved prompt or use default
-        customPrompt = sharedPreferences.getString("custom_prompt", defaultPrompt) ?: defaultPrompt
+        // Load saved conditional prompts or use default
+        loadConditionalPrompts()
         
         previewView = findViewById(R.id.previewView)
         captureButton = findViewById(R.id.captureButton)
@@ -195,9 +229,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 // Create multipart form data with image and prompt
+                val finalPrompt = generateFinalPrompt()
                 val requestBody = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
-                    .addFormDataPart("prompt", customPrompt)
+                    .addFormDataPart("prompt", finalPrompt)
                     .addFormDataPart(
                         "image", 
                         imageFile.name,
@@ -275,40 +310,241 @@ class MainActivity : ComponentActivity() {
     }
     
     private fun showPromptEditDialog() {
-        val editText = EditText(this).apply {
-            setText(customPrompt)
-            hint = "Enter your custom prompt for AI analysis"
-            minLines = 3
-            maxLines = 8
+        val scrollView = ScrollView(this)
+        val mainLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(32, 24, 32, 24)
         }
         
+        // Title and instructions
+        val instructionText = TextView(this).apply {
+            text = "Define conditional analysis rules. The AI will check each condition in order:"
+            setPadding(0, 0, 0, 24)
+            textSize = 14f
+        }
+        mainLayout.addView(instructionText)
+        
+        // Container for prompt items
+        val promptContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        
+        // Add existing prompts
+        conditionalPrompts.forEach { prompt ->
+            promptContainer.addView(createPromptItemView(prompt, promptContainer))
+        }
+        
+        mainLayout.addView(promptContainer)
+        
+        // Add new prompt button
+        val addButton = Button(this).apply {
+            text = "Add New Rule"
+            setOnClickListener {
+                val newPrompt = ConditionalPrompt("", "")
+                conditionalPrompts.add(newPrompt)
+                promptContainer.addView(createPromptItemView(newPrompt, promptContainer))
+            }
+        }
+        mainLayout.addView(addButton)
+        
+        scrollView.addView(mainLayout)
+        
         AlertDialog.Builder(this)
-            .setTitle("Edit Custom Prompt")
-            .setMessage("Customize how AI analyzes your photos:")
-            .setView(editText)
+            .setTitle("Edit Analysis Rules")
+            .setView(scrollView)
             .setPositiveButton("Save") { _, _ ->
-                val newPrompt = editText.text.toString().trim()
-                if (newPrompt.isNotEmpty()) {
-                    customPrompt = newPrompt
-                    savePromptToPreferences(newPrompt)
-                    Toast.makeText(this, "Prompt saved successfully!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Prompt cannot be empty", Toast.LENGTH_SHORT).show()
-                }
+                // Remove empty prompts
+                conditionalPrompts.removeAll { it.condition.isBlank() || it.action.isBlank() }
+                saveConditionalPrompts()
+                Toast.makeText(this, "Rules saved successfully!", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .setNeutralButton("Reset to Default") { _, _ ->
-                customPrompt = defaultPrompt
-                savePromptToPreferences(defaultPrompt)
-                Toast.makeText(this, "Prompt reset to default", Toast.LENGTH_SHORT).show()
+                conditionalPrompts.clear()
+                conditionalPrompts.addAll(defaultConditionalPrompts.map { it.copy() })
+                saveConditionalPrompts()
+                Toast.makeText(this, "Reset to default rules", Toast.LENGTH_SHORT).show()
             }
             .show()
     }
     
-    private fun savePromptToPreferences(prompt: String) {
+    private fun createPromptItemView(prompt: ConditionalPrompt, container: LinearLayout): View {
+        val itemLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+            setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+        }
+        
+        // "If you find" row
+        val ifLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        val ifLabel = TextView(this).apply {
+            text = "If you find: "
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        val conditionEdit = EditText(this).apply {
+            setText(prompt.condition)
+            hint = "e.g., a movie poster or text"
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+            setOnFocusChangeListener { _, _ ->
+                prompt.condition = text.toString()
+            }
+        }
+        
+        ifLayout.addView(ifLabel)
+        ifLayout.addView(conditionEdit)
+        
+        // "Then return" row
+        val thenLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        val thenLabel = TextView(this).apply {
+            text = "Then: "
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        val actionEdit = EditText(this).apply {
+            setText(prompt.action)
+            hint = "e.g., return the movie name and IMDB rating"
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+            setOnFocusChangeListener { _, _ ->
+                prompt.action = text.toString()
+            }
+        }
+        
+        thenLayout.addView(thenLabel)
+        thenLayout.addView(actionEdit)
+        
+        // Control buttons row
+        val controlLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        
+        val moveUpButton = Button(this).apply {
+            text = "↑"
+            textSize = 12f
+            layoutParams = LinearLayout.LayoutParams(60, 60)
+            setOnClickListener {
+                val index = conditionalPrompts.indexOf(prompt)
+                if (index > 0) {
+                    conditionalPrompts.removeAt(index)
+                    conditionalPrompts.add(index - 1, prompt)
+                    refreshPromptContainer(container)
+                }
+            }
+        }
+        
+        val moveDownButton = Button(this).apply {
+            text = "↓"
+            textSize = 12f
+            layoutParams = LinearLayout.LayoutParams(60, 60)
+            setOnClickListener {
+                val index = conditionalPrompts.indexOf(prompt)
+                if (index < conditionalPrompts.size - 1) {
+                    conditionalPrompts.removeAt(index)
+                    conditionalPrompts.add(index + 1, prompt)
+                    refreshPromptContainer(container)
+                }
+            }
+        }
+        
+        val deleteButton = Button(this).apply {
+            text = "Delete"
+            textSize = 12f
+            setBackgroundColor(0xFFFF6B6B.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = 16
+            }
+            setOnClickListener {
+                conditionalPrompts.remove(prompt)
+                container.removeView(itemLayout)
+            }
+        }
+        
+        controlLayout.addView(moveUpButton)
+        controlLayout.addView(moveDownButton)
+        controlLayout.addView(deleteButton)
+        
+        itemLayout.addView(ifLayout)
+        itemLayout.addView(thenLayout)
+        itemLayout.addView(controlLayout)
+        
+        return itemLayout
+    }
+    
+    private fun refreshPromptContainer(container: LinearLayout) {
+        container.removeAllViews()
+        conditionalPrompts.forEach { prompt ->
+            container.addView(createPromptItemView(prompt, container))
+        }
+    }
+    
+    private fun loadConditionalPrompts() {
+        val savedPromptsJson = sharedPreferences.getString("conditional_prompts", null)
+        if (savedPromptsJson != null) {
+            try {
+                val promptsArray = Gson().fromJson(savedPromptsJson, Array<ConditionalPrompt>::class.java)
+                conditionalPrompts.clear()
+                conditionalPrompts.addAll(promptsArray)
+            } catch (e: Exception) {
+                Log.e("LoadPrompts", "Error loading prompts", e)
+                conditionalPrompts.clear()
+                conditionalPrompts.addAll(defaultConditionalPrompts.map { it.copy() })
+            }
+        } else {
+            conditionalPrompts.clear()
+            conditionalPrompts.addAll(defaultConditionalPrompts.map { it.copy() })
+        }
+    }
+    
+    private fun saveConditionalPrompts() {
+        val promptsJson = Gson().toJson(conditionalPrompts)
         sharedPreferences.edit()
-            .putString("custom_prompt", prompt)
+            .putString("conditional_prompts", promptsJson)
             .apply()
     }
 
