@@ -18,6 +18,8 @@ import android.widget.Button
 import android.widget.ScrollView
 import android.view.ViewGroup
 import android.view.View
+import android.text.TextWatcher
+import android.text.Editable
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -408,9 +410,13 @@ class MainActivity : ComponentActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f
             )
-            setOnFocusChangeListener { _, _ ->
-                prompt.condition = text.toString()
-            }
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    prompt.condition = s.toString()
+                }
+            })
         }
         
         ifLayout.addView(ifLabel)
@@ -443,9 +449,13 @@ class MainActivity : ComponentActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f
             )
-            setOnFocusChangeListener { _, _ ->
-                prompt.action = text.toString()
-            }
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    prompt.action = s.toString()
+                }
+            })
         }
         
         thenLayout.addView(thenLabel)
@@ -461,9 +471,13 @@ class MainActivity : ComponentActivity() {
         }
         
         val moveUpButton = Button(this).apply {
-            text = "↑"
-            textSize = 12f
-            layoutParams = LinearLayout.LayoutParams(60, 60)
+            text = "UP"
+            textSize = 10f
+            setBackgroundColor(0xFF4CAF50.toInt()) // Green
+            setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(80, 60).apply {
+                marginEnd = 8
+            }
             setOnClickListener {
                 val index = conditionalPrompts.indexOf(prompt)
                 if (index > 0) {
@@ -475,9 +489,13 @@ class MainActivity : ComponentActivity() {
         }
         
         val moveDownButton = Button(this).apply {
-            text = "↓"
-            textSize = 12f
-            layoutParams = LinearLayout.LayoutParams(60, 60)
+            text = "DOWN"
+            textSize = 10f
+            setBackgroundColor(0xFF2196F3.toInt()) // Blue
+            setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(80, 60).apply {
+                marginEnd = 8
+            }
             setOnClickListener {
                 val index = conditionalPrompts.indexOf(prompt)
                 if (index < conditionalPrompts.size - 1) {
