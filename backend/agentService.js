@@ -187,13 +187,8 @@ User's Original Request: "${userPrompt}"
 
 Instructions:
 1. Use the web search results to enhance, verify, or update the initial analysis
-2. Include specific current information (ratings, prices, reviews, etc.) from the web results
-3. If there are discrepancies, favor the most recent web information
-4. Provide a comprehensive, accurate, and helpful response
-5. Be specific and cite relevant information from the search results
-6. Keep the response focused on what the user asked for
-
-Provide a detailed, enhanced analysis:
+2. Answer to the point, be precise and to the point
+3. Use official sources for the information.
 `;
 
     try {
